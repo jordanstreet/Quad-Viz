@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#141918" />
+    <title>Range</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <main id="app">
+      <div id="viewport" aria-label="Interactive 3D view of a quadcopter test facility"></div>
+      <header class="identity">
+        <div class="eyebrow"><span class="indicator"></span> FLIGHT TEST</div>
+        <h1><span>RANGE</span></h1>
+        <p id="location">DESERT TEST APRON</p>
+      </header>
+      <div class="readout" aria-label="Simulated flight readout">
+        <strong id="phase">ON PAD</strong>
+        <span id="altitude">ALT 0.0 M</span>
+      </div>
+      <section class="controls" aria-label="Scene controls">
+        <div class="toolbar">
+          <div class="views" aria-label="Camera views">
+            <button data-view="bay" aria-pressed="false">Bay</button>
+            <button data-view="apron" aria-pressed="true">Apron</button>
+            <button data-view="follow" aria-pressed="false">Follow</button>
+          </div>
+          <div class="playback">
+            <button id="play" class="primary">Run demo</button>
+            <button id="reset" aria-label="Reset scene" title="Reset scene">Reset</button>
+          </div>
+        </div>
+        <div class="timeline">
+          <label for="time">FLIGHT REPLAY</label>
+          <input id="time" type="range" min="0" max="11" value="0" step="0.02" />
+          <output id="time-label" for="time">00.0 / 11 S</output>
+        </div>
+        <p id="hint">Drag to orbit · Right-drag or two-finger drag to pan along the floor · Scroll or pinch to zoom</p>
+      </section>
+      <p id="error" role="alert" hidden></p>
+    </main>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
