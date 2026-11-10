@@ -1,11 +1,16 @@
 import * as THREE from 'three';
-import { box } from './facility.js';
-
-export const groundHeight = 0.19;
+import { box, launchPadSurfaceY } from './facility.js';
+const rotorOffsetX = 0.76;
+const propRadius = 0.355;
+const modelScale = 1 / (2 * (rotorOffsetX + propRadius));
+const skidCenterY = -0.119;
+const skidThickness = 0.024;
+export const groundHeight = launchPadSurfaceY + (skidThickness / 2 - skidCenterY) * modelScale;
 
 export function buildDrone(scene) {
   const root = new THREE.Group();
   root.name = 'R03-01 Quadcopter';
+  root.scale.setScalar(modelScale);
   scene.add(root);
   const body = new THREE.MeshStandardMaterial({ color: 0x353e3b, metalness: 0.28, roughness: 0.43 });
   const top = new THREE.MeshStandardMaterial({ color: 0x8b9384, metalness: 0.3, roughness: 0.38 });
@@ -16,27 +21,27 @@ export function buildDrone(scene) {
 
   function roundedBody() {
     const shape = new THREE.Shape();
-    shape.moveTo(-0.36, -0.34);
-    shape.lineTo(-0.22, -0.55);
-    shape.lineTo(0.22, -0.55);
-    shape.lineTo(0.36, -0.34);
-    shape.lineTo(0.31, 0.40);
-    shape.lineTo(0.19, 0.53);
-    shape.lineTo(-0.19, 0.53);
-    shape.lineTo(-0.31, 0.40);
+    shape.moveTo(-0.25, -0.26);
+    shape.lineTo(-0.16, -0.42);
+    shape.lineTo(0.16, -0.42);
+    shape.lineTo(0.25, -0.26);
+    shape.lineTo(0.21, 0.28);
+    shape.lineTo(0.13, 0.40);
+    shape.lineTo(-0.13, 0.40);
+    shape.lineTo(-0.21, 0.28);
     shape.closePath();
     const mesh = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, {
-      depth: 0.13, bevelEnabled: true, bevelSize: 0.033, bevelThickness: 0.027, bevelSegments: 2, steps: 1,
+      depth: 0.092, bevelEnabled: true, bevelSize: 0.019, bevelThickness: 0.015, bevelSegments: 2, steps: 1,
     }), body);
     mesh.rotation.x = -Math.PI / 2;
-    mesh.position.y = 0.01;
+    mesh.position.y = 0.005;
     mesh.castShadow = mesh.receiveShadow = true;
     root.add(mesh);
   }
   roundedBody();
-  box(root, 'Top battery', [0.43, 0.072, 0.57], [0, 0.175, 0.09], top);
-  box(root, 'Sensor face', [0.45, 0.12, 0.09], [0, 0.068, 0.50], carbon);
-  box(root, 'Gimbal yoke', [0.27, 0.12, 0.12], [0, -0.054, 0.34], metal);
+  box(root, 'Top battery', [0.31, 0.044, 0.47], [0, 0.128, 0.025], top);
+  box(root, 'Sensor face', [0.30, 0.066, 0.052], [0, 0.051, 0.424], carbon);
+  box(root, 'Gimbal yoke', [0.18, 0.075, 0.086], [0, -0.036, 0.33], metal);
 
   function cylinder(parent, name, radius, height, position, material, front = false) {
     const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, height, 24), material);
@@ -47,44 +52,53 @@ export function buildDrone(scene) {
     parent.add(mesh);
     return mesh;
   }
-  cylinder(root, 'Camera pod', 0.104, 0.19, [0, -0.075, 0.43], carbon, true);
-  cylinder(root, 'Camera lens', 0.068, 0.017, [0, -0.075, 0.534], lens, true);
-  for (const x of [-0.15, 0.15]) {
-    cylinder(root, 'Forward sensor', 0.035, 0.02, [x, 0.075, 0.554], lens, true);
+  cylinder(root, 'Camera pod', 0.063, 0.125, [0, -0.047, 0.382], carbon, true);
+  cylinder(root, 'Camera lens', 0.045, 0.015, [0, -0.047, 0.451], lens, true);
+  for (const x of [-0.10, 0.10]) {
+    cylinder(root, 'Forward sensor', 0.021, 0.014, [x, 0.054, 0.455], lens, true);
   }
 
   const rotors = [];
-  for (const [x, z, direction] of [[-0.76, 0.60, 1], [0.76, 0.60, -1], [-0.76, -0.60, -1], [0.76, -0.60, 1]]) {
-    const arm = box(root, 'Carbon motor arm', [0.13, 0.08, 0.79], [x * 0.63, 0.023, z * 0.68], carbon);
-    arm.rotation.y = Math.atan2(x * 0.74, z * 0.66);
-    cylinder(root, 'Motor', 0.094, 0.108, [x, 0.057, z], metal);
-    cylinder(root, 'Motor collar', 0.079, 0.043, [x, 0.123, z], carbon);
-    box(root, 'Motor position light', [0.052, 0.024, 0.026], [x, 0.047, z + Math.sign(z) * 0.094], led, false);
+  const bladeWidth = 0.046;
+  const bladeRoot = 0.035;
+  const bladeTip = Math.sqrt(propRadius ** 2 - (bladeWidth / 2) ** 2);
+  const rotorPositions = [[-1, 0.60, 1], [1, 0.60, -1], [-1, -0.60, -1], [1, -0.60, 1]];
+  for (const [side, z, direction] of rotorPositions) {
+    const x = side * rotorOffsetX;
+    const armRootX = side * 0.16;
+    const armRootZ = Math.sign(z) * 0.18;
+    const armLength = Math.hypot(x - armRootX, z - armRootZ);
+    const arm = box(root, 'Carbon motor arm', [0.085, 0.05, armLength],
+      [(x + armRootX) / 2, 0.021, (z + armRootZ) / 2], carbon);
+    arm.rotation.y = Math.atan2(x - armRootX, z - armRootZ);
+    cylinder(root, 'Motor', 0.075, 0.076, [x, 0.042, z], metal);
+    cylinder(root, 'Motor collar', 0.063, 0.031, [x, 0.093, z], carbon);
+    box(root, 'Motor position light', [0.039, 0.018, 0.020], [x, 0.044, z + Math.sign(z) * 0.075], led, false);
 
     const rotor = new THREE.Group();
     rotor.name = 'Rotor ' + (rotors.length + 1);
-    rotor.position.set(x, 0.16, z);
+    rotor.position.set(x, 0.121, z);
     root.add(rotor);
     const blades = new THREE.Group();
     rotor.add(blades);
-    cylinder(rotor, 'Propeller hub', 0.046, 0.034, [0, 0, 0], metal);
-    for (const side of [-1, 1]) {
-      const blade = box(blades, 'Propeller blade', [0.066, 0.016, 0.315], [0, 0.01, 0.185 * side], carbon);
-      blade.rotation.y = 0.14 * direction;
+    cylinder(rotor, 'Propeller hub', 0.040, 0.029, [0, 0, 0], metal);
+    for (const bladeSide of [-1, 1]) {
+      box(blades, 'Propeller blade', [bladeWidth, 0.012, bladeTip - bladeRoot],
+        [0, 0.007, (bladeTip + bladeRoot) / 2 * bladeSide], carbon);
     }
-    const disc = new THREE.Mesh(new THREE.RingGeometry(0.085, 0.355, 48), new THREE.MeshBasicMaterial({
+    const disc = new THREE.Mesh(new THREE.RingGeometry(0.072, propRadius, 48), new THREE.MeshBasicMaterial({
       color: 0xb2bcb4, opacity: 0, transparent: true, depthWrite: false, side: THREE.DoubleSide,
     }));
     disc.rotation.x = -Math.PI / 2;
-    disc.position.y = 0.017;
+    disc.position.y = 0.013;
     rotor.add(disc);
     rotors.push({ rotor, blades, disc, direction });
   }
   for (const side of [-1, 1]) {
-    for (const z of [-0.29, 0.29]) {
-      box(root, 'Landing strut', [0.06, 0.17, 0.07], [side * 0.26, -0.077, z], metal);
+    for (const z of [-0.23, 0.23]) {
+      box(root, 'Landing strut', [0.04, 0.112, 0.048], [side * 0.18, -0.056, z], metal);
     }
-    box(root, 'Landing skid', [0.07, 0.029, 0.71], [side * 0.26, -0.168, 0], carbon);
+    box(root, 'Landing skid', [0.05, skidThickness, 0.57], [side * 0.18, skidCenterY, 0], carbon);
   }
   return { root, rotors };
 }

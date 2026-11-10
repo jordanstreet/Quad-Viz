@@ -28,6 +28,7 @@ h1 span { color: var(--amber); }
 .identity p { color: var(--muted); margin: 11px 0 0; }
 .readout { right: clamp(20px, 5vw, 72px); display: grid; gap: 8px; text-align: right; color: #e0e4d8; }
 .readout strong { font-size: 14px; color: var(--amber); }
+#position { white-space: pre-line; line-height: 1.55; }
 .controls {
   left: 50%; bottom: clamp(12px, 3.5vw, 32px); transform: translateX(-50%);
   width: min(620px, calc(100% - 24px)); padding: 13px;

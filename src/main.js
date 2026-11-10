@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { buildFacility, outdoorPadZ } from './facility.js';
+import { buildFacility, bayCenterZ } from './facility.js';
 import { buildDrone, groundHeight } from './drone.js';
 
 const duration = 11;
@@ -12,7 +12,7 @@ const play = select('#play');
 const slider = select('#time');
 const label = select('#time-label');
 const phase = select('#phase');
-const altitude = select('#altitude');
+const positionReadout = select('#position');
 const locationLabel = select('#location');
 const hint = select('#hint');
 
@@ -27,7 +27,7 @@ function start() {
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0xb6c2bd);
-  scene.fog = new THREE.FogExp2(0xb6c2bd, 0.012);
+  scene.fog = new THREE.FogExp2(0xb6c2bd, 0.024);
   const pmrem = new THREE.PMREMGenerator(renderer);
   const room = new RoomEnvironment();
   const environment = pmrem.fromScene(room, 0.05);
@@ -36,7 +36,7 @@ function start() {
   room.dispose();
   pmrem.dispose();
 
-  const sky = new THREE.Mesh(new THREE.SphereGeometry(120, 28, 16), new THREE.ShaderMaterial({
+  const sky = new THREE.Mesh(new THREE.SphereGeometry(65, 28, 16), new THREE.ShaderMaterial({
     side: THREE.BackSide,
     depthWrite: false,
     uniforms: {
@@ -59,48 +59,50 @@ function start() {
         #include <colorspace_fragment>
       }`,
   }));
-  sky.position.z = 14;
+  sky.position.z = -6;
   scene.add(sky);
 
   scene.add(new THREE.HemisphereLight(0xcbd9db, 0x8b7960, 1.25));
   const sun = new THREE.DirectionalLight(0xffd9ab, 3.05);
-  sun.position.set(-26, 21, 31);
-  sun.target.position.set(0, 0, 10);
+  sun.position.set(-15, 13, 10);
+  sun.target.position.set(0, 0, -6);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
-  Object.assign(sun.shadow.camera, { left: -40, right: 40, top: 28, bottom: -28, near: 1, far: 85 });
+  Object.assign(sun.shadow.camera, {
+    left: -20, right: 20, top: 16, bottom: -16, near: 0.5, far: 48,
+  });
   sun.shadow.camera.updateProjectionMatrix();
   sun.shadow.bias = -0.0002;
-  sun.shadow.normalBias = 0.025;
+  sun.shadow.normalBias = 0.012;
   scene.add(sun, sun.target);
 
-  const bayKey = new THREE.SpotLight(0xf4f6e1, 480, 26, Math.PI / 3.15, 0.65, 2);
-  bayKey.position.set(1.1, 5.76, -1.4);
-  bayKey.target.position.set(0, 0, -4.5);
+  const bayKey = new THREE.SpotLight(0xf4f6e1, 145, 12, Math.PI / 3.15, 0.65, 2);
+  bayKey.position.set(0.55, 3.12, bayCenterZ + 1.5);
+  bayKey.target.position.set(0, 0, bayCenterZ);
   bayKey.castShadow = true;
   bayKey.shadow.mapSize.set(1024, 1024);
   bayKey.shadow.bias = -0.00018;
-  bayKey.shadow.normalBias = 0.013;
+  bayKey.shadow.camera.near = 0.25;
+  bayKey.shadow.normalBias = 0.006;
   scene.add(bayKey, bayKey.target);
-  for (const z of [-12.5, -7.8, 3.5]) {
-    const fill = new THREE.PointLight(0xe6eee5, 145, 20, 2);
-    fill.position.set(-0.9, 5.55, z);
+  for (const offset of [-3.5, -1.4, 3.5]) {
+    const fill = new THREE.PointLight(0xe6eee5, 45, 9, 2);
+    fill.position.set(-0.4, 3.10, bayCenterZ + offset);
     scene.add(fill);
   }
 
   buildFacility(scene, Math.min(renderer.capabilities.getMaxAnisotropy(), 8));
   const { root, rotors } = buildDrone(scene);
-  const camera = new THREE.PerspectiveCamera(46, 1, 0.2, 185);
+  const camera = new THREE.PerspectiveCamera(46, 1, 0.12, 100);
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.screenSpacePanning = false;
-  controls.minDistance = 2.8;
-  controls.maxDistance = 34;
+  controls.minDistance = 1.25;
+  controls.maxDistance = 27;
   controls.maxPolarAngle = Math.PI * 0.495;
 
   const views = {
-    bay: { position: [5.25, 2.55, 2.8], target: [0, 0.96, -5.25], label: 'BAY' },
-    apron: { position: [5, 3.1, outdoorPadZ + 8], target: [0, 1.65, outdoorPadZ], label: 'DESERT TEST APRON' },
+    apron: { position: [1.5, 3.1, 7.8], target: [0, 1.35, 0], label: 'DESERT TEST APRON' },
   };
   const defaultView = 'apron';
   let activeView = defaultView;
@@ -108,6 +110,7 @@ function start() {
   let running = false;
   const followPosition = new THREE.Vector3();
   const followTarget = new THREE.Vector3();
+  const followOffset = new THREE.Vector3(1.95, 0.95, 2.8);
 
   function setView(view) {
     activeView = view;
@@ -117,7 +120,7 @@ function start() {
     }
     if (view === 'follow') {
       updateFollow(1);
-      hint.textContent = 'Select Bay or Apron to pan';
+      hint.textContent = 'Select Apron to pan';
       locationLabel.textContent = 'FLIGHT TRACKING';
     } else {
       const preset = views[view];
@@ -185,7 +188,7 @@ function start() {
       state = 'SPOOL UP';
     }
 
-    root.position.set(0, groundHeight + height, outdoorPadZ);
+    root.position.set(0, groundHeight + height, 0);
     root.rotation.z = Math.PI * 2 * flip;
     const spin = THREE.MathUtils.smoothstep(elapsed, spoolStart, liftStart) *
       (1 - THREE.MathUtils.smoothstep(elapsed, touchdown, duration));
@@ -198,12 +201,18 @@ function start() {
     slider.value = elapsed.toFixed(2);
     label.value = elapsed.toFixed(1).padStart(4, '0') + ' / ' + duration + ' S';
     phase.textContent = state;
-    altitude.textContent = 'ALT ' + height.toFixed(1) + ' M';
+    // The range uses X right, Y toward the bay, and Z up from the pad.
+    positionReadout.textContent = [
+      `X ${root.position.x.toFixed(1)} M`,
+      `Y ${(-root.position.z).toFixed(1)} M`,
+      `Z ${height.toFixed(1)} M`,
+    ].join('\n');
   }
 
   function updateFollow(blend) {
-    followPosition.copy(root.position).add(new THREE.Vector3(2.8, 1.36, 3.65));
-    followTarget.copy(root.position).add(new THREE.Vector3(0, 0.03, 0));
+    followPosition.copy(root.position).add(followOffset);
+    followTarget.copy(root.position);
+    followTarget.y += 0.015;
     camera.position.lerp(followPosition, blend);
     controls.target.lerp(followTarget, blend);
     camera.lookAt(controls.target);
