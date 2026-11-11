@@ -6,6 +6,8 @@
 
 An interactive Three.js quadcopter visualization with a desert test range, manual pose controls, and a keyframe flight editor. Node.js and Vite handle development and builds. The visualization runs in a browser with WebGL 2.
 
+**[Open the live Quad-Viz demo](https://jordanstreet.github.io/Quad-Viz/)**
+
 <p align="center">
   <img src="docs/images/screenshot.png" alt="Quad-Viz showing the quad above the test apron, with the Flights and Pose panels and replay timeline open" width="960">
 </p>
@@ -28,10 +30,6 @@ npm run build
 ```
 
 Open `dist/quad-viz.html` directly in a browser, or share that single file. It bundles the JavaScript and CSS and runs without Node.js, a web server, or an internet connection. To preview the Vite build over HTTP, run `npm run preview` after building and open the printed URL.
-
-## Deploy with GitHub Pages
-
-In the repository's **Settings → Pages**, select **GitHub Actions** as the source. The Pages workflow publishes the standalone build on pushes to `main`. You can also run **Deploy Quad-Viz to GitHub Pages** from the **Actions** tab. The deployment job reports the live URL.
 
 ## Camera and playback
 
