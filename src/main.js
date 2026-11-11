@@ -4,6 +4,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { buildFacility, bayCenterZ } from './facility.js';
 import { buildDrone, groundHeight } from './drone.js';
 import { aircraftAngles, backflip, compileFlight, maxFlightTime, maxKeyframes, readFlight, readFlightCsv, setAircraftOrientation, writeFlightCsv } from './flights.js';
+import { readTelemetry } from './telemetry.js';
 
 const flightStorageKey = 'range-flight-sequences-v1';
 const select = (query) => document.querySelector(query);
@@ -113,6 +114,17 @@ function start() {
   let elapsed = 0;
   let running = false;
   let manualPose = false;
+  let liveSocket = null;
+  let pendingTelemetry = null;
+  let livePose = null;
+  const liveToggle = select('#live-toggle');
+  const liveForm = select('#live-form');
+  const liveUrl = select('#live-url');
+  const liveConnect = select('#live-connect');
+  const liveStatus = select('#live-status');
+  const editor = select('.editor-controls');
+  const timeline = select('.timeline');
+  const reset = select('#reset');
   const poseToggle = select('#pose-toggle');
   const poseForm = select('#pose-form');
   const poseFields = ['x', 'y', 'z', 'roll', 'pitch', 'yaw'].map((name, index) => {
@@ -156,6 +168,7 @@ function start() {
     following = enabled;
     controls.enabled = !enabled;
     followButton.setAttribute('aria-pressed', String(enabled));
+    followButton.title = enabled ? 'Stop following the quadcopter' : 'Follow the quadcopter';
     if (enabled) {
       // Clear pending orbit movement before handing the camera to Follow.
       controls.enableDamping = false;
@@ -207,8 +220,8 @@ function start() {
 
   function updatePositionReadout() {
     const [x, y, z] = rangePosition();
-    const [roll, pitch, yaw] = manualPose ? manualAngles : aircraftAngles(root.quaternion);
-    timeReadout.textContent = formatReadout('TIME', elapsed.toFixed(2), 'S');
+    const [roll, pitch, yaw] = livePose?.orientation ?? (manualPose ? manualAngles : aircraftAngles(root.quaternion));
+    timeReadout.textContent = formatReadout('TIME', (livePose?.time ?? elapsed).toFixed(2), 'S');
     positionReadout.textContent = [
       ['X', x, 'M'], ['Y', y, 'M'], ['Z', z, 'M'],
       ['ROLL', roll, '°'], ['PITCH', pitch, '°'], ['YAW', yaw, '°'],
@@ -242,6 +255,7 @@ function start() {
   function setRunning(value) {
     running = value;
     playLabel.textContent = running ? 'Pause' : elapsed > 0 && elapsed < duration ? 'Resume' : 'Run flight';
+    play.title = running ? 'Pause playback' : playLabel.textContent === 'Resume' ? 'Resume playback' : 'Run the selected flight';
     play.classList.toggle('is-playing', running);
   }
 
@@ -256,6 +270,67 @@ function start() {
     updateDrone();
     if (following) updateFollow(1);
   }
+
+  function endLive(message) {
+    const socket = liveSocket;
+    liveSocket = null;
+    pendingTelemetry = livePose = null;
+    socket?.close();
+    liveUrl.disabled = reset.disabled = editor.inert = timeline.hidden = false;
+    play.disabled = duration === 0;
+    liveConnect.textContent = 'Connect';
+    liveConnect.title = 'Connect to the telemetry server';
+    liveStatus.textContent = message;
+    seekFlight(elapsed);
+  }
+
+  function connectLive() {
+    let socket;
+    try {
+      const url = new URL(liveUrl.value);
+      if (url.protocol !== 'ws:' && url.protocol !== 'wss:') {
+        liveStatus.textContent = 'Enter a ws:// or wss:// URL.';
+        return;
+      }
+      socket = new WebSocket(url);
+    } catch {
+      liveStatus.textContent = 'Could not open this WebSocket. Check the URL and use wss:// for the hosted app.';
+      return;
+    }
+    seekFlight(elapsed);
+    updateRotors(0);
+    liveSocket = socket;
+    liveUrl.disabled = reset.disabled = play.disabled = editor.inert = timeline.hidden = true;
+    liveConnect.textContent = 'Disconnect';
+    liveConnect.title = 'Disconnect from the telemetry server';
+    liveStatus.textContent = 'Connecting…';
+    socket.addEventListener('open', () => {
+      if (liveSocket === socket) liveStatus.textContent = 'Connected. Waiting for a pose…';
+    });
+    socket.addEventListener('message', event => {
+      if (liveSocket !== socket) return;
+      const pose = readTelemetry(event.data);
+      if (pose) pendingTelemetry = pose;
+      else if (!livePose && !pendingTelemetry) liveStatus.textContent = 'Connected. Expected a JSON pose with time, x, y, z, roll, pitch, and yaw.';
+    });
+    socket.addEventListener('error', () => {
+      if (liveSocket === socket) endLive('Connection failed. Check the URL, server, and TLS certificate.');
+    });
+    socket.addEventListener('close', () => {
+      if (liveSocket === socket) endLive('Connection closed.');
+    });
+  }
+
+  liveToggle.addEventListener('click', () => {
+    liveForm.hidden = !liveForm.hidden;
+    liveToggle.setAttribute('aria-expanded', String(!liveForm.hidden));
+    liveToggle.title = liveForm.hidden ? 'Open live telemetry controls' : 'Close live telemetry controls';
+  });
+  liveForm.addEventListener('submit', event => {
+    event.preventDefault();
+    if (liveSocket) endLive('Disconnected');
+    else connectLive();
+  });
 
   function keyframeIconButton(icon, label) {
     const button = document.createElement('button');
@@ -363,6 +438,7 @@ function start() {
   flightToggle.addEventListener('click', () => {
     flightPanel.hidden = !flightPanel.hidden;
     flightToggle.setAttribute('aria-expanded', String(!flightPanel.hidden));
+    flightToggle.title = flightPanel.hidden ? 'Open flight editor' : 'Close flight editor';
   });
   flightSelect.addEventListener('change', () => selectFlight(flights[Number(flightSelect.value)]));
   function uniqueFlightName(base) {
@@ -452,6 +528,7 @@ function start() {
       if (file.size > 1024 * 1024) throw new Error('Choose a flight CSV file under 1 MB.');
       const name = file.name.replace(/\.csv$/i, '').trim().slice(0, 80) || 'Imported flight';
       const flight = readFlightCsv(await file.text(), name);
+      if (liveSocket) return;
       flight.name = uniqueFlightName(flight.name);
       flights.push(flight);
       selectFlight(flight);
@@ -475,6 +552,7 @@ function start() {
   function setPosePanel(open) {
     poseForm.hidden = !open;
     poseToggle.setAttribute('aria-expanded', String(open));
+    poseToggle.title = open ? 'Close pose controls' : 'Open pose controls';
     if (open && !manualPose) updateDrone();
   }
   poseToggle.addEventListener('click', () => setPosePanel(poseForm.hidden));
@@ -517,7 +595,7 @@ function start() {
     }
     setRunning(!running);
   });
-  select('#reset').addEventListener('click', () => {
+  reset.addEventListener('click', () => {
     seekFlight(0);
     resetCamera();
   });
@@ -544,7 +622,16 @@ function start() {
   renderer.setAnimationLoop((now) => {
     const delta = Math.min(0.05, Math.max(0, (now - last) / 1000));
     last = now;
-    if (running) {
+    if (pendingTelemetry) {
+      livePose = pendingTelemetry;
+      pendingTelemetry = null;
+      const [x, y, z] = livePose.position;
+      root.position.set(y, groundHeight + z, x);
+      setAircraftOrientation(root.quaternion, livePose.orientation);
+      updatePositionReadout();
+      if (!poseForm.hidden) populatePoseForm([...livePose.position, ...livePose.orientation]);
+      if (liveStatus.textContent !== 'Streaming') liveStatus.textContent = 'Streaming';
+    } else if (running) {
       elapsed = Math.min(duration, elapsed + delta);
       updateDrone();
       if (elapsed >= duration) setRunning(false);

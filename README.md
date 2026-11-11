@@ -47,6 +47,18 @@ The launch pad is the position origin. When you face the bay, **+X** points away
 
 Orientation uses aircraft roll, pitch, and yaw in degrees. Roll and yaw range from −180° to +180°, and pitch ranges from −90° to +90°.
 
+## Stream live poses
+
+Run a WebSocket server in the tool that produces telemetry, or use a relay that exposes its stream. In Quad-Viz, open **Live**, enter the server URL, and click **Connect**. For the GitHub Pages app, use a `wss://` endpoint with a trusted certificate. A local HTTP development session can use an endpoint such as `ws://localhost:8765`. If the server checks browser origins, allow the origin that serves Quad-Viz.
+
+Send one JSON text message per pose with all seven numeric fields.
+
+```json
+{"time":2.5,"x":1.2,"y":-0.5,"z":1.8,"roll":10,"pitch":-5,"yaw":45}
+```
+
+Use nonnegative time in seconds, X/Y/Z in range meters, and aircraft roll/pitch/yaw in degrees with the same limits as the Pose panel. Quad-Viz displays the latest valid pose each render frame. **Follow** works during streaming. Click **Disconnect** to return to the replay.
+
 ## Create or edit a flight
 
 The **Flights** menu has icons for New, Duplicate, Import, Export, and Delete. Hover over a button to see its name.

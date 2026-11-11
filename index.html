@@ -28,8 +28,8 @@ YAW      0.00 °</span>
       <div class="control-dock">
       <section class="controls editor-controls" aria-label="Flight and pose editor">
         <div class="toolbar">
-          <button id="flight-toggle" type="button" aria-expanded="false" aria-controls="flight-panel"><span class="flight-icon icon-flights" aria-hidden="true"></span>Flights</button>
-          <button id="pose-toggle" type="button" aria-expanded="false" aria-controls="pose-form"><span class="flight-icon icon-pose" aria-hidden="true"></span>Pose</button>
+          <button id="flight-toggle" type="button" title="Open flight editor" aria-expanded="false" aria-controls="flight-panel"><span class="flight-icon icon-flights" aria-hidden="true"></span>Flights</button>
+          <button id="pose-toggle" type="button" title="Open pose controls" aria-expanded="false" aria-controls="pose-form"><span class="flight-icon icon-pose" aria-hidden="true"></span>Pose</button>
         </div>
         <section id="flight-panel" aria-label="Flight sequences" hidden>
           <div class="flight-row flight-actions" role="group" aria-label="Flight selection and actions">
@@ -105,10 +105,19 @@ YAW      0.00 °</span>
       </section>
       <section class="controls playback-controls" aria-label="Flight playback and camera">
         <div class="toolbar">
-          <button id="follow" type="button" aria-pressed="false"><span class="flight-icon icon-follow" aria-hidden="true"></span>Follow</button>
-          <button id="play" class="primary" type="button"><span class="flight-icon icon-play" aria-hidden="true"></span><span id="play-label">Run flight</span></button>
+          <button id="follow" type="button" title="Follow the quadcopter" aria-pressed="false"><span class="flight-icon icon-follow" aria-hidden="true"></span>Follow</button>
+          <button id="play" class="primary" type="button" title="Run the selected flight"><span class="flight-icon icon-play" aria-hidden="true"></span><span id="play-label">Run flight</span></button>
           <button id="reset" aria-label="Reset scene" title="Reset scene"><span class="flight-icon icon-reset" aria-hidden="true"></span>Reset</button>
+          <button id="live-toggle" type="button" title="Open live telemetry controls" aria-expanded="false" aria-controls="live-form"><span class="flight-icon icon-live" aria-hidden="true"></span>Live</button>
         </div>
+        <form id="live-form" hidden>
+          <div class="flight-row live-row">
+            <label for="live-url">WebSocket URL</label>
+            <input id="live-url" type="url" placeholder="wss://example.com/telemetry" required>
+            <button id="live-connect" type="submit" title="Connect to the telemetry server">Connect</button>
+          </div>
+          <p id="live-status" class="pose-note" role="status">Disconnected</p>
+        </form>
         <div class="timeline">
           <label for="time">FLIGHT REPLAY</label>
           <input id="time" type="range" min="0" max="11" value="0" step="any" />
