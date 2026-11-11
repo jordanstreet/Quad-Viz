@@ -16,29 +16,107 @@
         <p id="location">DESERT TEST APRON</p>
       </header>
       <div class="readout" aria-label="Simulated flight readout">
-        <strong id="phase">ON PAD</strong>
-        <span id="position">X 0.0 M
-Y 0.0 M
-Z 0.0 M</span>
+        <span id="fps">FPS         —  </span>
+        <span id="flight-time">TIME     0.00 S</span>
+        <span id="position">X        0.00 M
+Y        0.00 M
+Z        0.00 M
+ROLL     0.00 °
+PITCH    0.00 °
+YAW      0.00 °</span>
       </div>
-      <section class="controls" aria-label="Scene controls">
+      <div class="control-dock">
+      <section class="controls editor-controls" aria-label="Flight and pose editor">
         <div class="toolbar">
-          <div class="views" aria-label="Camera views">
-            <button data-view="apron" aria-pressed="true">Apron</button>
-            <button data-view="follow" aria-pressed="false">Follow</button>
+          <button id="flight-toggle" type="button" aria-expanded="false" aria-controls="flight-panel"><span class="flight-icon icon-flights" aria-hidden="true"></span>Flights</button>
+          <button id="pose-toggle" type="button" aria-expanded="false" aria-controls="pose-form"><span class="flight-icon icon-pose" aria-hidden="true"></span>Pose</button>
+        </div>
+        <section id="flight-panel" aria-label="Flight sequences" hidden>
+          <div class="flight-row flight-actions" role="group" aria-label="Flight selection and actions">
+            <label for="flight-select">Flight</label>
+            <select id="flight-select"></select>
+            <button id="flight-new" type="button" aria-label="New flight" title="New flight"><span class="flight-icon icon-add" aria-hidden="true"></span></button>
+            <button id="flight-duplicate" type="button" aria-label="Duplicate flight" title="Duplicate flight"><span class="flight-icon icon-copy" aria-hidden="true"></span></button>
+            <button id="flight-import" type="button" aria-label="Import flight CSV" title="Import flight CSV"><span class="flight-icon icon-transfer icon-download" aria-hidden="true"></span></button>
+            <input id="flight-file" type="file" accept=".csv,text/csv" hidden>
+            <button id="flight-export" type="button" aria-label="Export flight CSV" title="Export flight CSV"><span class="flight-icon icon-transfer icon-upload" aria-hidden="true"></span></button>
+            <button id="flight-delete" type="button" aria-label="Delete flight" title="Delete flight" disabled><span class="flight-icon icon-delete" aria-hidden="true"></span></button>
           </div>
-          <div class="playback">
-            <button id="play" class="primary">Run demo</button>
-            <button id="reset" aria-label="Reset scene" title="Reset scene">Reset</button>
+          <div class="flight-row">
+            <label for="keyframe-time">Keyframe time (s)</label>
+            <input id="keyframe-time" type="number" min="0" max="3600" step="any" value="1">
+            <button id="keyframe-action" class="icon-button" type="button" aria-label="New keyframe" title="New keyframe"><span class="flight-icon icon-add" aria-hidden="true"></span></button>
+            <button id="keyframe-cancel" class="icon-button" type="button" aria-label="Cancel edit" title="Cancel edit" hidden><span class="flight-icon icon-add icon-cancel" aria-hidden="true"></span></button>
           </div>
+          <p id="flight-status" class="pose-note" role="status"></p>
+          <div class="keyframe-scroll">
+            <table class="keyframe-table" aria-label="Flight keyframes">
+              <thead>
+                <tr>
+                  <th scope="col">Time (s)</th>
+                  <th scope="col">X (m)</th>
+                  <th scope="col">Y (m)</th>
+                  <th scope="col">Z (m)</th>
+                  <th scope="col">Roll (°)</th>
+                  <th scope="col">Pitch (°)</th>
+                  <th scope="col">Yaw (°)</th>
+                  <th scope="col">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="keyframe-rows"></tbody>
+            </table>
+          </div>
+        </section>
+        <form id="pose-form" aria-label="Manual quadcopter pose" hidden>
+          <div class="pose-fields">
+            <div class="pose-field">
+              <label for="pose-x">X (m)</label>
+              <input id="pose-x" name="x" type="number" step="any" value="0" required>
+              <input id="pose-x-slider" type="range" min="-5" max="5" step="any" value="0" aria-label="X (m) slider">
+            </div>
+            <div class="pose-field">
+              <label for="pose-y">Y (m)</label>
+              <input id="pose-y" name="y" type="number" step="any" value="0" required>
+              <input id="pose-y-slider" type="range" min="-5" max="5" step="any" value="0" aria-label="Y (m) slider">
+            </div>
+            <div class="pose-field">
+              <label for="pose-z">Z (m)</label>
+              <input id="pose-z" name="z" type="number" step="any" value="0" required>
+              <input id="pose-z-slider" type="range" min="-5" max="5" step="any" value="0" aria-label="Z (m) slider">
+            </div>
+            <div class="pose-field">
+              <label for="pose-roll">Roll (°)</label>
+              <input id="pose-roll" name="roll" type="number" min="-180" max="180" step="any" value="0" required>
+              <input id="pose-roll-slider" type="range" min="-180" max="180" step="any" value="0" aria-label="Roll (°) slider">
+            </div>
+            <div class="pose-field">
+              <label for="pose-pitch">Pitch (°)</label>
+              <input id="pose-pitch" name="pitch" type="number" min="-90" max="90" step="any" value="0" required>
+              <input id="pose-pitch-slider" type="range" min="-90" max="90" step="any" value="0" aria-label="Pitch (°) slider">
+            </div>
+            <div class="pose-field">
+              <label for="pose-yaw">Yaw (°)</label>
+              <input id="pose-yaw" name="yaw" type="number" min="-180" max="180" step="any" value="0" required>
+              <input id="pose-yaw-slider" type="range" min="-180" max="180" step="any" value="0" aria-label="Yaw (°) slider">
+            </div>
+          </div>
+          <p class="pose-note">Facing the bay, +X points away from it, +Y points right, and +Z points up. Roll, pitch, and yaw use aircraft axes.</p>
+        </form>
+      </section>
+      <section class="controls playback-controls" aria-label="Flight playback and camera">
+        <div class="toolbar">
+          <button id="follow" type="button" aria-pressed="false"><span class="flight-icon icon-follow" aria-hidden="true"></span>Follow</button>
+          <button id="play" class="primary" type="button"><span class="flight-icon icon-play" aria-hidden="true"></span><span id="play-label">Run flight</span></button>
+          <button id="reset" aria-label="Reset scene" title="Reset scene"><span class="flight-icon icon-reset" aria-hidden="true"></span>Reset</button>
         </div>
         <div class="timeline">
           <label for="time">FLIGHT REPLAY</label>
-          <input id="time" type="range" min="0" max="11" value="0" step="0.02" />
+          <input id="time" type="range" min="0" max="11" value="0" step="any" />
           <output id="time-label" for="time">00.0 / 11 S</output>
         </div>
-        <p id="hint">Drag to orbit · Right-drag or two-finger drag to pan along the floor · Scroll or pinch to zoom</p>
+        <p id="hint">Drag to orbit · Right-click and drag to pan · Scroll to zoom</p>
       </section>
+      </div>
       <p id="error" role="alert" hidden></p>
     </main>
     <script type="module" src="/src/main.js"></script>

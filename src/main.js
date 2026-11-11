@@ -3,18 +3,25 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { buildFacility, bayCenterZ } from './facility.js';
 import { buildDrone, groundHeight } from './drone.js';
+import { aircraftAngles, backflip, compileFlight, maxFlightTime, maxKeyframes, readFlight, readFlightCsv, setAircraftOrientation, writeFlightCsv } from './flights.js';
 
-const duration = 11;
+const flightStorageKey = 'range-flight-sequences-v1';
 const select = (query) => document.querySelector(query);
 const viewport = select('#viewport');
 const error = select('#error');
 const play = select('#play');
+const playLabel = select('#play-label');
 const slider = select('#time');
 const label = select('#time-label');
-const phase = select('#phase');
 const positionReadout = select('#position');
+const timeReadout = select('#flight-time');
+const fpsReadout = select('#fps');
 const locationLabel = select('#location');
 const hint = select('#hint');
+
+function formatReadout(label, value, unit = ' ') {
+  return `${label.padEnd(5)} ${value.padStart(7)} ${unit}`;
+}
 
 function start() {
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -101,112 +108,124 @@ function start() {
   controls.maxDistance = 27;
   controls.maxPolarAngle = Math.PI * 0.495;
 
-  const views = {
-    apron: { position: [1.5, 3.1, 7.8], target: [0, 1.35, 0], label: 'DESERT TEST APRON' },
-  };
-  const defaultView = 'apron';
-  let activeView = defaultView;
+  const followButton = select('#follow');
+  let following = false;
   let elapsed = 0;
   let running = false;
+  let manualPose = false;
+  const poseToggle = select('#pose-toggle');
+  const poseForm = select('#pose-form');
+  const poseFields = ['x', 'y', 'z', 'roll', 'pitch', 'yaw'].map((name, index) => {
+    const input = poseForm.elements.namedItem(name);
+    const range = select(`#pose-${name}-slider`);
+    return { input, range, decimals: index < 3 ? 2 : 1 };
+  });
+  let manualAngles = [0, 0, 0];
+  const flights = [readFlight(backflip)];
+  try {
+    const saved = JSON.parse(localStorage.getItem(flightStorageKey) || '[]');
+    if (Array.isArray(saved)) {
+      for (const entry of saved) {
+        const flight = readFlight(entry);
+        if (flight.name !== backflip.name) flights.push(flight);
+      }
+    }
+  } catch {
+    // The built-in flight remains available if local storage cannot be read.
+  }
+  let activeFlight = flights[0];
+  let sampleFlight = compileFlight(activeFlight);
+  let duration = activeFlight.keyframes.at(-1).time;
+  const flightToggle = select('#flight-toggle');
+  const flightPanel = select('#flight-panel');
+  const flightSelect = select('#flight-select');
+  const flightDelete = select('#flight-delete');
+  const flightStatus = select('#flight-status');
+  const flightFile = select('#flight-file');
+  const keyframeTime = select('#keyframe-time');
+  const keyframeAction = select('#keyframe-action');
+  const keyframeActionIcon = keyframeAction.firstElementChild;
+  const keyframeCancel = select('#keyframe-cancel');
+  const keyframeRows = select('#keyframe-rows');
+  let editingKeyframe = null;
   const followPosition = new THREE.Vector3();
   const followTarget = new THREE.Vector3();
   const followOffset = new THREE.Vector3(1.95, 0.95, 2.8);
 
-  function setView(view) {
-    activeView = view;
-    controls.enabled = view !== 'follow';
-    for (const button of document.querySelectorAll('[data-view]')) {
-      button.setAttribute('aria-pressed', String(button.dataset.view === view));
-    }
-    if (view === 'follow') {
+  function setFollowing(enabled) {
+    following = enabled;
+    controls.enabled = !enabled;
+    followButton.setAttribute('aria-pressed', String(enabled));
+    if (enabled) {
+      // Clear pending orbit movement before handing the camera to Follow.
+      controls.enableDamping = false;
+      controls.update();
+      controls.enableDamping = true;
       updateFollow(1);
-      hint.textContent = 'Select Apron to pan';
+      hint.textContent = 'Turn off Follow to adjust the camera';
       locationLabel.textContent = 'FLIGHT TRACKING';
     } else {
-      const preset = views[view];
-      camera.position.set(...preset.position);
-      controls.target.set(...preset.target);
-      controls.update();
-      hint.textContent = 'Drag to orbit · Right-drag or two-finger drag to pan along the floor · Scroll or pinch to zoom';
-      locationLabel.textContent = preset.label;
+      hint.textContent = 'Drag to orbit · Right-click and drag to pan · Scroll to zoom';
+      locationLabel.textContent = 'DESERT TEST APRON';
     }
   }
 
-  const spoolStart = 0.6;
-  const liftStart = 1.4;
-  const climbEnd = 3.2;
-  const punchStart = 3.65;
-  const flipStart = 4.2;
-  const flipEnd = 5;
-  const catchEnd = 5.65;
-  const descentStart = 6.25;
-  const touchdown = 9.65;
-  const hoverHeight = 1.35;
-  const gravity = 9.81;
-  const punchAcceleration = 7;
-  const punchTime = flipStart - punchStart;
-  const flipTime = flipEnd - flipStart;
-  const catchTime = catchEnd - flipEnd;
-  const flipEntrySpeed = punchAcceleration * punchTime;
-  const flipEntryHeight = hoverHeight + 0.5 * punchAcceleration * punchTime ** 2;
-  const catchEntrySpeed = flipEntrySpeed - gravity * flipTime;
-  const catchEntryHeight = flipEntryHeight + flipEntrySpeed * flipTime - 0.5 * gravity * flipTime ** 2;
-  const catchAcceleration = -catchEntrySpeed / catchTime;
-  const catchEndHeight = catchEntryHeight + 0.5 * catchEntrySpeed * catchTime;
+  function resetCamera() {
+    setFollowing(false);
+    camera.position.set(1.5, 3.1, 7.8);
+    controls.target.set(0, 1.35, 0);
+    controls.update();
+  }
 
   function updateDrone() {
-    const climb = THREE.MathUtils.smoothstep(elapsed, liftStart, climbEnd);
-    let height = hoverHeight * climb;
-    const flip = THREE.MathUtils.smoothstep(elapsed, flipStart, flipEnd);
-    let state = 'ON PAD';
+    const [x, y, z] = sampleFlight(elapsed, root.quaternion);
+    root.position.set(y, groundHeight + z, x);
+    const ramp = Math.min(0.5, duration / 2);
+    const spin = ramp ? THREE.MathUtils.smoothstep(elapsed, 0, ramp) *
+      (1 - THREE.MathUtils.smoothstep(elapsed, duration - ramp, duration)) : 0;
+    updateRotors(spin);
+    slider.value = elapsed;
+    label.value = `${elapsed.toFixed(2)} / ${Number(duration.toFixed(2))} S`;
+    updatePositionReadout();
+    if (!poseForm.hidden) populatePoseForm();
+  }
 
-    if (elapsed >= descentStart) {
-      const descent = THREE.MathUtils.smoothstep(elapsed, descentStart, touchdown);
-      height = catchEndHeight * (1 - descent);
-      if (elapsed < touchdown) state = 'LANDING';
-    } else if (elapsed >= catchEnd) {
-      height = catchEndHeight;
-      state = 'HOVER';
-    } else if (elapsed >= flipEnd) {
-      const time = elapsed - flipEnd;
-      height = catchEntryHeight + catchEntrySpeed * time + 0.5 * catchAcceleration * time ** 2;
-      state = 'CATCH';
-    } else if (elapsed >= flipStart) {
-      // Coast under gravity while the quad rolls, then carry that speed into the catch.
-      const time = elapsed - flipStart;
-      height = flipEntryHeight + flipEntrySpeed * time - 0.5 * gravity * time ** 2;
-      state = 'SIDE FLIP';
-    } else if (elapsed >= punchStart) {
-      const time = elapsed - punchStart;
-      height = hoverHeight + 0.5 * punchAcceleration * time ** 2;
-      state = 'PUNCH UP';
-    } else if (elapsed >= climbEnd) {
-      state = 'HOVER';
-    } else if (elapsed >= liftStart) {
-      state = 'CLIMB';
-    } else if (elapsed >= spoolStart) {
-      state = 'SPOOL UP';
-    }
-
-    root.position.set(0, groundHeight + height, 0);
-    root.rotation.z = Math.PI * 2 * flip;
-    const spin = THREE.MathUtils.smoothstep(elapsed, spoolStart, liftStart) *
-      (1 - THREE.MathUtils.smoothstep(elapsed, touchdown, duration));
+  function updateRotors(spin) {
     for (const { rotor, blades, disc, direction } of rotors) {
       rotor.rotation.y = direction * elapsed * 79 * spin;
       blades.visible = spin < 0.85;
       disc.material.opacity = 0.15 * spin;
       disc.visible = spin > 0;
     }
-    slider.value = elapsed.toFixed(2);
-    label.value = elapsed.toFixed(1).padStart(4, '0') + ' / ' + duration + ' S';
-    phase.textContent = state;
-    // The range uses X right, Y toward the bay, and Z up from the pad.
+  }
+
+  function rangePosition() {
+    return [root.position.z, root.position.x, root.position.y - groundHeight];
+  }
+
+  function updatePositionReadout() {
+    const [x, y, z] = rangePosition();
+    const [roll, pitch, yaw] = manualPose ? manualAngles : aircraftAngles(root.quaternion);
+    timeReadout.textContent = formatReadout('TIME', elapsed.toFixed(2), 'S');
     positionReadout.textContent = [
-      `X ${root.position.x.toFixed(1)} M`,
-      `Y ${(-root.position.z).toFixed(1)} M`,
-      `Z ${height.toFixed(1)} M`,
-    ].join('\n');
+      ['X', x, 'M'], ['Y', y, 'M'], ['Z', z, 'M'],
+      ['ROLL', roll, '°'], ['PITCH', pitch, '°'], ['YAW', yaw, '°'],
+    ].map(([axis, value, unit]) => formatReadout(axis, value.toFixed(2), unit)).join('\n');
+  }
+
+  function populatePoseForm(values = [...rangePosition(), ...aircraftAngles(root.quaternion)]) {
+    values.forEach((value, index) => {
+      const field = poseFields[index];
+      if (running && document.activeElement === field.input && !field.input.validity.valid) return;
+      field.input.value = Number(value.toFixed(4));
+      syncPoseSlider(field);
+    });
+  }
+
+  function syncPoseSlider({ input, range }) {
+    const value = input.valueAsNumber;
+    if (!input.validity.valid || !Number.isFinite(value)) return;
+    range.value = THREE.MathUtils.clamp(value, Number(range.min), Number(range.max));
   }
 
   function updateFollow(blend) {
@@ -220,28 +239,287 @@ function start() {
 
   function setRunning(value) {
     running = value;
-    play.textContent = running ? 'Pause' : elapsed > 0 && elapsed < duration ? 'Resume' : 'Run demo';
+    playLabel.textContent = running ? 'Pause' : elapsed > 0 && elapsed < duration ? 'Resume' : 'Run flight';
+    play.classList.toggle('is-playing', running);
   }
 
-  for (const button of document.querySelectorAll('[data-view]')) {
-    button.addEventListener('click', () => setView(button.dataset.view));
+  function seekFlight(time) {
+    if (editingKeyframe) {
+      setEditingKeyframe(null);
+      flightStatus.textContent = 'Keyframe edit canceled.';
+    }
+    elapsed = time;
+    manualPose = false;
+    setRunning(false);
+    updateDrone();
+    if (following) updateFollow(1);
+  }
+
+  function keyframeIconButton(icon, label) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'icon-button';
+    button.title = label;
+    button.setAttribute('aria-label', label);
+    const symbol = document.createElement('span');
+    symbol.className = `flight-icon ${icon}`;
+    symbol.setAttribute('aria-hidden', 'true');
+    button.append(symbol);
+    return button;
+  }
+
+  function renderFlightEditor() {
+    flightSelect.replaceChildren(...flights.map((flight, index) => {
+      const option = document.createElement('option');
+      option.value = index;
+      option.textContent = flight.name;
+      return option;
+    }));
+    flightSelect.value = flights.indexOf(activeFlight);
+    flightDelete.disabled = activeFlight === flights[0];
+    keyframeRows.replaceChildren(...activeFlight.keyframes.map(frame => {
+      const row = document.createElement('tr');
+      const poseValues = [...frame.position, ...frame.orientation].map(value => Number(value.toFixed(2)));
+      for (const value of [frame.time, ...poseValues]) {
+        const cell = document.createElement('td');
+        cell.textContent = value;
+        row.append(cell);
+      }
+      const actions = document.createElement('td');
+      const edit = keyframeIconButton('icon-edit', `Edit keyframe at ${frame.time} seconds`);
+      edit.addEventListener('click', () => {
+        seekFlight(frame.time);
+        setEditingKeyframe(frame);
+        keyframeTime.value = frame.time;
+        manualPose = true;
+        manualAngles = frame.orientation;
+        updateRotors(0);
+        setPosePanel(true);
+        populatePoseForm([...frame.position, ...frame.orientation]);
+        flightStatus.textContent = `Editing the keyframe at ${frame.time} s. Change its time or pose, then save.`;
+      });
+      actions.append(edit);
+      if (activeFlight.keyframes.length > 1) {
+        const remove = keyframeIconButton('icon-delete', `Remove keyframe at ${frame.time} seconds`);
+        remove.addEventListener('click', () => {
+          activeFlight.keyframes = activeFlight.keyframes.filter(item => item !== frame);
+          refreshFlight(Math.min(elapsed, activeFlight.keyframes.at(-1).time));
+          saveFlights('Keyframe removed.');
+        });
+        actions.append(remove);
+      }
+      row.append(actions);
+      return row;
+    }));
+  }
+
+  function refreshFlight(time = 0) {
+    sampleFlight = compileFlight(activeFlight);
+    duration = activeFlight.keyframes.at(-1).time;
+    slider.max = duration;
+    play.disabled = slider.disabled = duration === 0;
+    seekFlight(time);
+    renderFlightEditor();
+  }
+
+  function selectFlight(flight) {
+    activeFlight = flight;
+    refreshFlight();
+    keyframeTime.value = Math.min(maxFlightTime, duration + 1);
+    flightStatus.textContent = flight === flights[0]
+      ? 'Backflip resets on refresh. Duplicate it to keep your changes.'
+      : 'Edit an existing keyframe or add a new one at a different time.';
+  }
+
+  function setEditingKeyframe(frame) {
+    editingKeyframe = frame;
+    const label = frame ? 'Save keyframe' : 'New keyframe';
+    keyframeAction.title = label;
+    keyframeAction.setAttribute('aria-label', label);
+    keyframeActionIcon.className = frame ? 'flight-icon icon-save' : 'flight-icon icon-add';
+    keyframeCancel.hidden = !frame;
+  }
+
+  function captureKeyframe(time) {
+    const angles = manualPose ? manualAngles : aircraftAngles(root.quaternion);
+    return {
+      time,
+      position: rangePosition().map(value => Number(value.toFixed(6))),
+      orientation: angles.map(value => Number(value.toFixed(6))),
+    };
+  }
+
+  function saveFlights(message) {
+    try {
+      localStorage.setItem(flightStorageKey, JSON.stringify(flights.slice(1)));
+      flightStatus.textContent = message;
+    } catch {
+      flightStatus.textContent = `${message} Browser storage is unavailable. Export CSV to keep a copy.`;
+    }
+  }
+
+  flightToggle.addEventListener('click', () => {
+    flightPanel.hidden = !flightPanel.hidden;
+    flightToggle.setAttribute('aria-expanded', String(!flightPanel.hidden));
+  });
+  flightSelect.addEventListener('change', () => selectFlight(flights[Number(flightSelect.value)]));
+  function uniqueFlightName(base) {
+    let name = base;
+    for (let number = 2; flights.some(flight => flight.name === name); number++) {
+      const suffix = ` (${number})`;
+      name = base.slice(0, 80 - suffix.length) + suffix;
+    }
+    return name;
+  }
+
+  function promptFlightName(message, suggestion) {
+    const name = window.prompt(message, suggestion)?.trim();
+    if (!name) return;
+    if (name.length > 80 || flights.some(flight => flight.name === name)) {
+      flightStatus.textContent = 'Choose a unique name of up to 80 characters.';
+      return;
+    }
+    return name;
+  }
+
+  select('#flight-duplicate').addEventListener('click', () => {
+    const suggestion = uniqueFlightName(`${activeFlight.name.slice(0, 75)} copy`);
+    const name = promptFlightName('Name the duplicate flight', suggestion);
+    if (!name) return;
+    const copy = readFlight({ ...activeFlight, name });
+    flights.push(copy);
+    selectFlight(copy);
+    saveFlights(`Created ${copy.name}.`);
+  });
+  flightDelete.addEventListener('click', () => {
+    const index = flights.indexOf(activeFlight);
+    if (index < 1 || !window.confirm(`Delete “${activeFlight.name}”?`)) return;
+    const [deleted] = flights.splice(index, 1);
+    selectFlight(flights[Math.min(index, flights.length - 1)]);
+    saveFlights(`Deleted ${deleted.name}.`);
+  });
+  select('#flight-new').addEventListener('click', () => {
+    const name = promptFlightName('Name this flight', `Flight ${flights.length}`);
+    if (!name) return;
+    const flight = { version: 1, name, keyframes: [captureKeyframe(0)] };
+    flights.push(flight);
+    selectFlight(flight);
+    saveFlights('First keyframe added at 0 s. Set the next pose and time, then click New keyframe.');
+  });
+  keyframeAction.addEventListener('click', () => {
+    const time = keyframeTime.valueAsNumber;
+    if (!Number.isFinite(time) || !keyframeTime.reportValidity()) {
+      flightStatus.textContent = 'Enter a keyframe time between 0 and 3,600 seconds.';
+      return;
+    }
+    if (!poseForm.checkValidity()) {
+      setPosePanel(true);
+      poseForm.reportValidity();
+      return;
+    }
+    const frames = activeFlight.keyframes;
+    if (frames.some(frame => frame !== editingKeyframe && frame.time === time)) {
+      flightStatus.textContent = 'A keyframe already exists at that time. Choose a different time.';
+      return;
+    }
+    if (!editingKeyframe && frames.length >= maxKeyframes) {
+      flightStatus.textContent = 'This flight has reached 1,000 keyframes.';
+      return;
+    }
+    const frame = captureKeyframe(time);
+    const edited = editingKeyframe !== null;
+    if (edited) frames[frames.indexOf(editingKeyframe)] = frame;
+    else frames.push(frame);
+    frames.sort((a, b) => a.time - b.time);
+    setEditingKeyframe(null);
+    refreshFlight(time);
+    keyframeTime.value = Math.min(maxFlightTime, time + 1);
+    saveFlights(edited ? `Keyframe saved at ${time} s.` : `Keyframe added at ${time} s.`);
+  });
+  keyframeCancel.addEventListener('click', () => {
+    if (!editingKeyframe) return;
+    keyframeTime.value = editingKeyframe.time;
+    seekFlight(editingKeyframe.time);
+  });
+  select('#flight-import').addEventListener('click', () => flightFile.click());
+  flightFile.addEventListener('change', async () => {
+    const file = flightFile.files[0];
+    flightFile.value = '';
+    if (!file) return;
+    try {
+      if (file.size > 1024 * 1024) throw new Error('Choose a flight CSV file under 1 MB.');
+      const name = file.name.replace(/\.csv$/i, '').trim().slice(0, 80) || 'Imported flight';
+      const flight = readFlightCsv(await file.text(), name);
+      flight.name = uniqueFlightName(flight.name);
+      flights.push(flight);
+      selectFlight(flight);
+      saveFlights(`Imported ${flight.name}.`);
+    } catch (cause) {
+      flightStatus.textContent = `Import failed. ${cause.message}`;
+    }
+  });
+  select('#flight-export').addEventListener('click', () => {
+    const blob = new Blob([writeFlightCsv(activeFlight)], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const filename = activeFlight.name.replace(/[<>:"/\\|?*]/g, '-').replace(/[. ]+$/, '') || 'flight';
+    link.download = `${filename}.csv`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
+
+  followButton.addEventListener('click', () => setFollowing(!following));
+  function setPosePanel(open) {
+    poseForm.hidden = !open;
+    poseToggle.setAttribute('aria-expanded', String(open));
+    if (open && !manualPose) updateDrone();
+  }
+  poseToggle.addEventListener('click', () => setPosePanel(poseForm.hidden));
+  for (const field of poseFields) {
+    const { input, range, decimals } = field;
+    input.addEventListener('input', () => {
+      syncPoseSlider(field);
+      updateManualPose();
+    });
+    range.addEventListener('input', () => {
+      const value = Number(range.valueAsNumber.toFixed(decimals));
+      input.value = THREE.MathUtils.clamp(value, Number(range.min), Number(range.max));
+      updateManualPose();
+    });
+  }
+  poseForm.addEventListener('submit', event => event.preventDefault());
+
+  function updateManualPose() {
+    if (poseFields.some(({ input }) => !input.validity.valid)) return;
+    const values = poseFields.map(({ input }) => input.valueAsNumber);
+    if (!values.every(Number.isFinite)) return;
+    const [x, y, z, ...angles] = values;
+    manualPose = true;
+    manualAngles = angles;
+    setRunning(false);
+    root.position.set(y, groundHeight + z, x);
+    setAircraftOrientation(root.quaternion, angles);
+    updateRotors(0);
+    updatePositionReadout();
   }
   play.addEventListener('click', () => {
+    if (editingKeyframe) {
+      setEditingKeyframe(null);
+      flightStatus.textContent = 'Keyframe edit canceled.';
+    }
     if (elapsed >= duration) elapsed = 0;
+    if (manualPose) {
+      manualPose = false;
+      updateDrone();
+    }
     setRunning(!running);
   });
   select('#reset').addEventListener('click', () => {
-    elapsed = 0;
-    setRunning(false);
-    updateDrone();
-    setView(defaultView);
+    seekFlight(0);
+    resetCamera();
   });
-  slider.addEventListener('input', () => {
-    elapsed = Number(slider.value);
-    setRunning(false);
-    updateDrone();
-    if (activeView === 'follow') updateFollow(1);
-  });
+  slider.addEventListener('input', () => seekFlight(Number(slider.value)));
 
   function resize() {
     const { clientWidth, clientHeight } = viewport;
@@ -252,9 +530,15 @@ function start() {
   }
   window.addEventListener('resize', resize);
   resize();
-  updateDrone();
-  setView(defaultView);
+  selectFlight(activeFlight);
+  resetCamera();
   let last = performance.now();
+  let fpsSampleStart = null;
+  let framesRendered = 0;
+  document.addEventListener('visibilitychange', () => {
+    fpsSampleStart = null;
+    framesRendered = 0;
+  });
   renderer.setAnimationLoop((now) => {
     const delta = Math.min(0.05, Math.max(0, (now - last) / 1000));
     last = now;
@@ -263,9 +547,21 @@ function start() {
       updateDrone();
       if (elapsed >= duration) setRunning(false);
     }
-    if (activeView === 'follow') updateFollow(1 - Math.exp(-delta * 6));
+    if (following) updateFollow(1 - Math.exp(-delta * 6));
     else controls.update();
     renderer.render(scene, camera);
+    if (fpsSampleStart === null) {
+      fpsSampleStart = now;
+    } else {
+      framesRendered++;
+      const sampleMs = now - fpsSampleStart;
+      if (sampleMs >= 500) {
+        const fps = framesRendered * 1000 / sampleMs;
+        fpsReadout.textContent = formatReadout('FPS', fps.toFixed(2));
+        fpsSampleStart = now;
+        framesRendered = 0;
+      }
+    }
   });
 }
 
@@ -275,5 +571,5 @@ try {
   console.error(cause);
   error.textContent = 'The 3D scene could not start. Open this page in a browser with WebGL 2 and hardware acceleration enabled.';
   error.hidden = false;
-  select('.controls').hidden = true;
+  select('.control-dock').hidden = true;
 }

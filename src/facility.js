@@ -3,7 +3,7 @@ import * as THREE from 'three';
 export const launchPadSurfaceY = 0;
 export const bayCenterZ = -13;
 const apronSize = 16;
-// Apron coordinates are (X, Y), with +Y toward the bay along Three.js -Z.
+// Apron (X, Y) maps to world (Z, X), pointing away from the bay and right when facing it.
 const conePositions = [[3, 3], [3, -3], [-3, 3], [-3, -3]];
 
 const standard = (color, roughness = 0.65, metalness = 0) =>
@@ -96,7 +96,7 @@ function apronSurface(anisotropy) {
   stencil('0, 0', 0, -0.31, 0.12, 0.40);
   ctx.fillStyle = '#464740';
   for (const [x, y] of conePositions) {
-    stencil(`(${x}, ${y}) m`, x + 0.5, -y + 0.36, 0.23, 0.87);
+    stencil(`(${x}, ${y}) m`, y + 0.5, x + 0.36, 0.23, 0.87);
   }
 
   const texture = new THREE.CanvasTexture(canvas);
@@ -318,10 +318,10 @@ export function buildFacility(scene, anisotropy) {
 
   const coneGeometry = new THREE.CylinderGeometry(0.025, 0.09, 0.28, 20);
   for (const [x, y] of conePositions) {
-    box(scene, 'Survey marker base', [0.22, 0.02, 0.22], [x, 0.01, -y], dark);
+    box(scene, 'Survey marker base', [0.22, 0.02, 0.22], [y, 0.01, x], dark);
     const cone = new THREE.Mesh(coneGeometry, amber);
     cone.name = 'Survey cone';
-    cone.position.set(x, 0.16, -y);
+    cone.position.set(y, 0.16, x);
     cone.castShadow = true;
     cone.receiveShadow = true;
     scene.add(cone);
