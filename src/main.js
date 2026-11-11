@@ -185,7 +185,9 @@ function start() {
       (1 - THREE.MathUtils.smoothstep(elapsed, duration - ramp, duration)) : 0;
     updateRotors(spin);
     slider.value = elapsed;
-    label.value = `${elapsed.toFixed(2)} / ${Number(duration.toFixed(2))} S`;
+    const totalTime = duration.toFixed(2);
+    const currentTime = elapsed.toFixed(2).padStart(totalTime.length, '0');
+    label.value = `${currentTime} / ${Number(totalTime)} S`;
     updatePositionReadout();
     if (!poseForm.hidden) populatePoseForm();
   }

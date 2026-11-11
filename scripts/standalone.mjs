@@ -1,5 +1,5 @@
 import { readFile, writeFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const output = new URL('../dist/', import.meta.url);
 let html = await readFile(new URL('index.html', output), 'utf8');
@@ -13,6 +13,6 @@ html = html.replace(script[0], () => '<script type="module">' +
   js.replace(/<\/script/gi, '<\\/script') + '</script>');
 html = html.replace(style[0], () => '<style>' + css + '</style>');
 
-const file = new URL('Range 03.html', output);
+const file = new URL('quad-viz.html', output);
 await writeFile(file, html);
-console.log('Standalone demo written to ' + resolve('dist', 'Range 03.html'));
+console.log('Standalone demo written to ' + fileURLToPath(file));
