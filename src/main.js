@@ -37,7 +37,7 @@ function start() {
   scene.fog = new THREE.FogExp2(0xb6c2bd, 0.024);
   const pmrem = new THREE.PMREMGenerator(renderer);
   const room = new RoomEnvironment();
-  const environment = pmrem.fromScene(room, 0.05);
+  const environment = pmrem.fromScene(room, 0.04);
   scene.environment = environment.texture;
   scene.environmentIntensity = 0.56;
   room.dispose();
