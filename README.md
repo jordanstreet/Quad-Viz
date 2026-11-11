@@ -1,6 +1,14 @@
 # Quad-Viz
 
+<p align="center">
+  <img src="docs/images/logo.png" alt="Quad-Viz quadcopter logo" width="224">
+</p>
+
 An interactive Three.js quadcopter visualization with a desert test range, manual pose controls, and a keyframe flight editor. Node.js and Vite handle development and builds. The visualization runs in a browser with WebGL 2.
+
+<p align="center">
+  <img src="docs/images/screenshot.png" alt="Quad-Viz showing the quad above the test apron, with the Flights and Pose panels and replay timeline open" width="960">
+</p>
 
 ## Run locally
 
